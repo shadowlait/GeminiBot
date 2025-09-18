@@ -4,8 +4,7 @@ import re
 import os
 
 from dotenv import load_dotenv
-from google import genai
-# from google.colab import userdata # Use userdata to access secrets
+import google.generativeai as genai  # This is the correct import
 
 # Load environment variables from .env file
 load_dotenv("bot_credentials.env")
@@ -14,9 +13,13 @@ load_dotenv("bot_credentials.env")
 gemini_key = os.getenv("GEMINI_API")
 bot_token = os.getenv("BOT_TOKEN_KEY")
 
-# Initialize Telegram Bot and Gemini Client
+# Configure the Gemini client
+genai.configure(api_key=gemini_key)
+# Initialize the model
+model = genai.GenerativeModel('gemini-2.0-flash-exp')  # Or 'gemini-pro'
+
+# Initialize Telegram Bot
 bot = telebot.TeleBot(bot_token)
-client = genai.Client(api_key=gemini_key)
 
 def format_text_for_telegram(text):
     """
@@ -29,14 +32,11 @@ def format_text_for_telegram(text):
     # Convert markdown-like bold syntax to HTML bold
     text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)
 
-    # Convert numbered lists
+    # Convert numbered lists (keep them simple or use bold)
     text = re.sub(r'^(\d+)\.\s+', r'<b>\1.</b> ', text, flags=re.MULTILINE)
 
-    # Convert bullet points
+    # Convert bullet points to a simple bullet
     text = re.sub(r'^[\*\-]\s+', r'• ', text, flags=re.MULTILINE)
-
-    # For line breaks, we'll use newline characters instead of <br> tags
-    # Telegram will automatically handle newlines in HTML mode
 
     return text
 
@@ -58,12 +58,9 @@ def receive_message(message):
         # Continue without the generating message
 
     try:
-        # Get response from Gemini model
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=message.text
-        )
-
+        # Get response from Gemini model - THIS IS THE CORRECTED PART
+        response = model.generate_content(message.text)
+        
         # Get the raw response text
         text = response.text
 
@@ -141,4 +138,4 @@ def receive_message(message):
 
 # Start the bot
 print("Bot is running...")
-bot.polling(none_stop=True)
+bot.polling()
