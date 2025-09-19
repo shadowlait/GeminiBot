@@ -2,9 +2,9 @@ import telebot
 import html
 import re
 import os
-
+from flask import Flask, request
 from dotenv import load_dotenv
-import google.generativeai as genai  # This is the correct import
+from google import genai
 
 # Load environment variables from .env file
 load_dotenv("bot_credentials.env")
@@ -13,13 +13,26 @@ load_dotenv("bot_credentials.env")
 gemini_key = os.getenv("GEMINI_API")
 bot_token = os.getenv("BOT_TOKEN_KEY")
 
-# Configure the Gemini client
-genai.configure(api_key=gemini_key)
-# Initialize the model
-model = genai.GenerativeModel('gemini-2.0-flash-exp')  # Or 'gemini-pro'
-
-# Initialize Telegram Bot
+# Initialize Telegram Bot and Gemini Client
 bot = telebot.TeleBot(bot_token)
+client = genai.Client(api_key=gemini_key)
+
+# Initialize Flask app for web server
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Telegram Bot is running!"
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return ''
+    else:
+        return 'Invalid content type', 403
 
 def format_text_for_telegram(text):
     """
@@ -32,10 +45,10 @@ def format_text_for_telegram(text):
     # Convert markdown-like bold syntax to HTML bold
     text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)
 
-    # Convert numbered lists (keep them simple or use bold)
+    # Convert numbered lists
     text = re.sub(r'^(\d+)\.\s+', r'<b>\1.</b> ', text, flags=re.MULTILINE)
 
-    # Convert bullet points to a simple bullet
+    # Convert bullet points
     text = re.sub(r'^[\*\-]\s+', r'• ', text, flags=re.MULTILINE)
 
     return text
@@ -58,9 +71,12 @@ def receive_message(message):
         # Continue without the generating message
 
     try:
-        # Get response from Gemini model - THIS IS THE CORRECTED PART
-        response = model.generate_content(message.text)
-        
+        # Get response from Gemini model
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=message.text
+        )
+
         # Get the raw response text
         text = response.text
 
@@ -136,6 +152,18 @@ def receive_message(message):
         except Exception as send_error:
             print(f"Error sending error message: {send_error}")
 
-# Start the bot
-print("Bot is running...")
-bot.polling()
+# Set webhook when running on Render
+if __name__ == '__main__':
+    # Get Render's external URL
+    render_external_url = os.getenv('RENDER_EXTERNAL_URL')
+    
+    if render_external_url:
+        # Set webhook for Telegram
+        webhook_url = f"{render_external_url}/webhook"
+        bot.remove_webhook()
+        bot.set_webhook(url=webhook_url)
+        print(f"Webhook set to: {webhook_url}")
+    
+    # Start Flask server
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
